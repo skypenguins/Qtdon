@@ -2,7 +2,6 @@
 #define QMASTODONPOSTSTATUS_H
 
 #include "qmastodonnetbase.h"
-#include <QLinkedList>
 #include <iterator>
 
 class QMastodonPostStatus : public QMastodonNetBase
