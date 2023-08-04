@@ -35,3 +35,8 @@ oauth2.json
 *.exe
 *.out
 *.app
+
+*.stash
+Makefile
+uic_wrapper.sh
+.DS_Store
