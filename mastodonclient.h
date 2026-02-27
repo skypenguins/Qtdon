@@ -28,11 +28,14 @@ public:
     [[nodiscard]] bool isAuthenticated() const;
     [[nodiscard]] QString errorMessage() const;
 
-    /** Step 1: open the authorisation page in the browser. */
-    Q_INVOKABLE void startAuth(const QString &mastodonHost);
+    /** Start the authorisation flow — opens browser, listens on localhost. */
+    Q_INVOKABLE void startAuth(const QString &mastodonHost,
+                               const QString &clientKey,
+                               const QString &clientSecret);
 
-    /** Step 2: exchange the auth code for an access token. */
-    Q_INVOKABLE void postAuthCode(const QString &authCode);
+    /** Skip the OAuth flow by providing a pre-existing access token. */
+    Q_INVOKABLE void setAccessToken(const QString &mastodonHost,
+                                    const QString &accessToken);
 
     /** Post a status (toot). */
     Q_INVOKABLE void postStatus(const QString &status);

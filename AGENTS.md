@@ -7,7 +7,7 @@ OAuth2 認可コードフローを経て、任意の Mastodon インスタンス
 
 - **ライセンス:** LGPL v3
 - **ビルドシステム:** CMake（`CMakeLists.txt`）— Qt 6.5+ 必須
-- **Qt モジュール:** `Quick`, `Network`, `QuickControls2`
+- **Qt モジュール:** `Quick`, `Network`, `NetworkAuth`, `QuickControls2`
 - **C++ 標準:** C++17
 
 ## ディレクトリ構造
@@ -18,8 +18,7 @@ Qtdon/
 ├── main.cpp                         # アプリケーションエントリーポイント
 ├── Main.qml                         # メイン UI（ログイン・投稿画面）— 大文字始まりで QML 型として登録
 ├── mastodonclient.h / .cpp          # QML ↔ C++ ファサード（QML_ELEMENT）
-├── oauth2.h / .cpp                  # OAuth2 汎用ヘルパークラス
-├── oauthmastodon.h / .cpp           # Mastodon 固有の OAuth2 非同期フロー
+├── oauthmastodon.h / .cpp           # QtNetworkAuth ベースの Mastodon OAuth2 フロー
 ├── qmastodonnetbase.h / .cpp        # API リクエスト抽象基底クラス
 ├── qmastodonpoststatus.h / .cpp     # POST /api/v1/statuses 実装
 ├── .gitignore                       # Git 除外設定
@@ -36,18 +35,19 @@ Qtdon/
 
 ```
 QObject
-├── OAuth2                           # OAuth2 認証クエリ・ヘッダー生成
-│   └── OAuthMastodon                # Mastodon 向け非同期認証フロー
-├── QMastodonNetBase                 # API リクエスト基底（JSON解析・エラーハンドリング）
-│   └── QMastodonPostStatus          # POST /api/v1/statuses
-└── MastodonClient  [QML_ELEMENT]    # QML 向けファサード
+├── QOAuth2AuthorizationCodeFlow       # QtNetworkAuth 提供（OAuthMastodon が内部利用）
+├── QOAuthHttpServerReplyHandler        # QtNetworkAuth 提供（localhost リダイレクト受信）
+├── OAuthMastodon                      # Mastodon 向け OAuth2 ラッパー
+├── QMastodonNetBase                   # API リクエスト基底（JSON解析・エラーハンドリング）
+│   └── QMastodonPostStatus            # POST /api/v1/statuses
+└── MastodonClient  [QML_ELEMENT]      # QML 向けファサード
 ```
 
 ### レイヤー構成
 
 1. **UI 層 (QML):** `main.qml` — `MastodonClient` を直接インスタンス化し、プロパティバインディングで状態を反映
 2. **ファサード層:** `MastodonClient` — `QML_ELEMENT` で QML モジュールに自動登録。`Q_INVOKABLE` メソッドと `Q_PROPERTY(READ/NOTIFY)` で双方向通信
-3. **認証層:** `OAuth2` → `OAuthMastodon` — 完全非同期。ブラウザで認可URL を開き、シグナルでアクセストークン取得完了を通知
+3. **認証層:** `OAuthMastodon` — `QOAuth2AuthorizationCodeFlow`（QtNetworkAuth）をラップ。`QOAuthHttpServerReplyHandler` でローカルサーバーを起動し、ブラウザからのリダイレクトを自動受信。認可コードの手動入力は不要
 4. **API 層:** `QMastodonNetBase` → `QMastodonPostStatus` — 認証済みの HTTP リクエストを Mastodon API に送信。エラーはシグナル経由で上位に伝播
 
 ### データフロー
@@ -57,14 +57,21 @@ QObject
   │  Q_INVOKABLE
   ▼
 [MastodonClient]
-  ├── startAuth(host)     → OAuthMastodon::requestAuthorization()
-  │                           → QDesktopServices::openUrl()
-  │                           → emit authorizationUrlOpened()
+  ├── startAuth(host, key, secret)
+  │       → OAuthMastodon::setClientCredentials(key, secret)
+  │       → OAuthMastodon::requestAuthorization(host)
+  │           → QOAuthHttpServerReplyHandler (localhost)
+  │           → QDesktopServices::openUrl()
+  │           → emit authorizationUrlOpened()
+  │           → (user authorises in browser)
+  │           → redirect to localhost → token exchange
+  │           → emit accessTokenReceived()
+  │           → MastodonClient::authenticated = true
   │
-  ├── postAuthCode(code)  → OAuthMastodon::requestAccessToken()   [async]
-  │                           → connect(reply, &finished, lambda)
-  │                           → emit accessTokenReceived()
-  │                           → MastodonClient::authenticated = true
+  ├── setAccessToken(host, token)
+  │       → OAuthMastodon::setMastodonHost(host)
+  │       → OAuthMastodon::setAccessToken(token)
+  │       → MastodonClient::authenticated = true
   │
   └── postStatus(text)    → QMastodonPostStatus::postStatus()     [async]
                               → connect(reply, &finished, onReplyFinished)
@@ -78,20 +85,16 @@ QObject
 - プロパティ:
   - `authenticated` (READ + NOTIFY) — 認証状態
   - `errorMessage` (READ + NOTIFY) — 最新エラーメッセージ
-- `Q_INVOKABLE` メソッド: `startAuth()`, `postAuthCode()`, `postStatus()`
+- `Q_INVOKABLE` メソッド: `startAuth(host, clientKey, clientSecret)`, `setAccessToken(host, token)`, `postStatus(text)`
 - `OAuthMastodon`, `QNetworkAccessManager` のライフサイクルを管理
 
-### `OAuth2` (oauth2.h/cpp)
-- `client_id` / `client_secret` を保持
-- `generateAuthQuery()` — 認可URLのクエリパラメータ生成
-- `generateTokenRequestData()` — トークンリクエストの POST body 生成
-- `generateBearerHeader()` — `static` メソッド、Bearer ヘッダー生成
-- **注意:** `CLIENT_ID` / `CLIENT_SECRET` は `oauth2.cpp` 内のプレースホルダー（`***`）
-
 ### `OAuthMastodon` (oauthmastodon.h/cpp)
-- `OAuth2` を継承。完全非同期の認証フロー
-- `requestAuthorization()` — ブラウザで認可URL を開く
-- `requestAccessToken()` — ラムダ接続による非同期トークン取得（`QEventLoop` 不使用）
+- `QOAuth2AuthorizationCodeFlow` を内部に保持し、Mastodon の OAuth2 認可フローをラップ
+- `QOAuthHttpServerReplyHandler` — QtNetworkAuth 提供。ローカル HTTP サーバーを起動し、ブラウザからのリダイレクトを自動受信してトークン交換を実行
+- `setClientCredentials()` — クライアントキー・クライアントシークレットを外部から設定（ハードコードなし）
+- `requestAuthorization()` — Authorization URL / Token URL を設定し `grant()` を呼び出し、`authorizeWithBrowser` シグナル経由でブラウザを開く
+- `setAccessToken()` / `setMastodonHost()` — 既存トークンでの直接認証をサポート
+- `generateBearerHeader()` — `static` メソッド、Bearer ヘッダー生成
 - シグナル: `authorizationUrlOpened()`, `accessTokenReceived()`, `errorOccurred()`
 
 ### `QMastodonNetBase` (qmastodonnetbase.h/cpp)
@@ -134,7 +137,6 @@ cmake --build .
 
 ## 既知の制限・TODO
 
-- `oauth2.cpp` の `CLIENT_ID` / `CLIENT_SECRET` がプレースホルダー — 外部設定への移行が必要
 - タイムライン表示・通知など読み取り系 API は未実装
 - `content/AuthWindow.qml` が未実装
 - アクセストークンの永続化（`QSettings` 等）が未実装

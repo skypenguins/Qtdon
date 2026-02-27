@@ -67,7 +67,7 @@ ApplicationWindow {
         id: loginPopup
         anchors.centerIn: parent
         width: parent.width * 0.85
-        height: 220
+        height: 340
         modal: true
         focus: true
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
@@ -83,34 +83,55 @@ ApplicationWindow {
                 Layout.alignment: Qt.AlignHCenter
             }
 
-            RowLayout {
+            TextField {
+                id: hostField
+                placeholderText: qsTr("Instance (e.g. mastodon.social)")
                 Layout.fillWidth: true
+            }
 
-                TextField {
-                    id: hostField
-                    placeholderText: qsTr("Instance (e.g. mastodon.social)")
-                    Layout.fillWidth: true
-                }
+            TextField {
+                id: clientKeyField
+                placeholderText: qsTr("Client key")
+                Layout.fillWidth: true
+            }
 
-                Button {
-                    text: qsTr("Open Auth")
-                    onClicked: client.startAuth(hostField.text)
+            TextField {
+                id: clientSecretField
+                placeholderText: qsTr("Client secret")
+                echoMode: TextInput.Password
+                Layout.fillWidth: true
+            }
+
+            TextField {
+                id: accessTokenField
+                placeholderText: qsTr("Access token (optional)")
+                echoMode: TextInput.Password
+                Layout.fillWidth: true
+            }
+
+            Button {
+                text: accessTokenField.text.length > 0
+                      ? qsTr("Use Token")
+                      : qsTr("Login via Browser")
+                Layout.alignment: Qt.AlignHCenter
+                onClicked: {
+                    if (accessTokenField.text.length > 0) {
+                        client.setAccessToken(hostField.text,
+                                              accessTokenField.text)
+                    } else {
+                        client.startAuth(hostField.text,
+                                         clientKeyField.text,
+                                         clientSecretField.text)
+                    }
                 }
             }
 
-            RowLayout {
+            Label {
+                text: qsTr("Enter an access token to skip browser auth.")
+                font.italic: true
+                opacity: 0.6
+                wrapMode: Text.Wrap
                 Layout.fillWidth: true
-
-                TextField {
-                    id: authCodeField
-                    placeholderText: qsTr("Paste authorization code...")
-                    Layout.fillWidth: true
-                }
-
-                Button {
-                    text: qsTr("Authorize")
-                    onClicked: client.postAuthCode(authCodeField.text)
-                }
             }
         }
     }

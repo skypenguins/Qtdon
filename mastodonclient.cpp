@@ -34,14 +34,21 @@ QString MastodonClient::errorMessage() const
 // Q_INVOKABLE methods (called from QML)
 // ---------------------------------------------------------------------------
 
-void MastodonClient::startAuth(const QString &mastodonHost)
+void MastodonClient::startAuth(const QString &mastodonHost,
+                               const QString &clientKey,
+                               const QString &clientSecret)
 {
+    m_oauth->setClientCredentials(clientKey, clientSecret);
     m_oauth->requestAuthorization(mastodonHost);
 }
 
-void MastodonClient::postAuthCode(const QString &authCode)
+void MastodonClient::setAccessToken(const QString &mastodonHost,
+                                    const QString &accessToken)
 {
-    m_oauth->requestAccessToken(authCode);
+    m_oauth->setMastodonHost(mastodonHost);
+    m_oauth->setAccessToken(accessToken.toUtf8());
+    m_authenticated = true;
+    emit authenticatedChanged();
 }
 
 void MastodonClient::postStatus(const QString &status)

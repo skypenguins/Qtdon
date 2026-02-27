@@ -45,15 +45,52 @@
 ### API の変化
 | 旧 (Binding) | 新 (MastodonClient) |
 |---|---|
-| `Q_PROPERTY(QString startAuth WRITE ...)` | `Q_INVOKABLE void startAuth(const QString&)` |
-| `Q_PROPERTY(QByteArray postAuthCode WRITE ...)` | `Q_INVOKABLE void postAuthCode(const QString&)` |
+| `Q_PROPERTY(QString startAuth WRITE ...)` | `Q_INVOKABLE void startAuth(host, clientKey, clientSecret)` |
+| `Q_PROPERTY(QByteArray postAuthCode WRITE ...)` | —（廃止: localhost リダイレクトで自動化） |
 | `Q_PROPERTY(QByteArray toot WRITE ...)` | `Q_INVOKABLE void postStatus(const QString&)` |
+| — | `Q_INVOKABLE void setAccessToken(host, token)` |
 | — | `Q_PROPERTY(bool authenticated READ/NOTIFY)` |
 | — | `Q_PROPERTY(QString errorMessage READ/NOTIFY)` |
 
 ---
 
-## 3. 非同期化: QEventLoop の排除
+## 3. OAuth2 認証の全面刷新: 独自実装 → QtNetworkAuth
+
+### 変更内容
+- `oauth2.h / .cpp`（独自 OAuth2 ヘルパークラス）を廃止
+- `OAuthMastodon` を `OAuth2` の継承から `QObject` の直接継承に変更
+- 内部で `QOAuth2AuthorizationCodeFlow` + `QOAuthHttpServerReplyHandler` を使用
+- OOB (out-of-band) フローを廃止し、localhost リダイレクト方式に変更
+- クライアントキー・クライアントシークレットをハードコードから UI 入力に変更
+- 既存アクセストークンでの直接認証（`setAccessToken`）をサポート
+
+### 理由
+- 独自の OAuth2 実装は保守負担が大きく、RFC 準拠の保証が難しい
+- QtNetworkAuth はトークン交換・リフレッシュ・エラーハンドリングを内包
+- OOB フローは OAuth 2.1 で廃止予定のレガシー方式
+- localhost リダイレクト方式によりユーザーの手動コード入力が不要に
+
+### 旧構成
+```
+OAuth2 (独自基底クラス)
+  └── OAuthMastodon (Mastodon 固有フロー)
+      ├── generateAuthQuery() — 手動でクエリ構築
+      ├── generateTokenRequestData() — 手動で POST body 構築
+      ├── requestAccessToken() — 手動で HTTP POST + JSON パース
+      └── OOB フロー (urn:ietf:wg:oauth:2.0:oob)
+```
+
+### 新構成
+```
+OAuthMastodon (QObject 直接継承)
+  ├── QOAuth2AuthorizationCodeFlow (QtNetworkAuth)
+  ├── QOAuthHttpServerReplyHandler (localhost リダイレクト)
+  ├── setClientCredentials() — 外部からキー設定
+  ├── requestAuthorization() — grant() で自動フロー開始
+  └── setAccessToken() / setMastodonHost() — 既存トークンで直接認証
+```
+
+## 4. 非同期化: QEventLoop の排除
 
 ### 変更内容
 - `OAuthMastodon::requestAccessToken()` から `QEventLoop` + `QTimer` による同期ブロックを削除
@@ -87,7 +124,7 @@ connect(reply, &QNetworkReply::finished, this, [this, reply]() {
 
 ---
 
-## 4. UI とロジックの分離: QMessageBox の全面除去
+## 5. UI とロジックの分離: QMessageBox の全面除去
 
 ### 変更内容
 - `OAuthMastodon`, `QMastodonNetBase`, `QMastodonPostStatus` から全ての `QMessageBox` コードを削除
@@ -108,7 +145,7 @@ connect(reply, &QNetworkReply::finished, this, [this, reply]() {
 
 ---
 
-## 5. Qt Widgets 依存の除去
+## 6. Qt Widgets 依存の除去
 
 ### 変更内容
 - `main.cpp` で `QApplication` → `QGuiApplication` に変更
@@ -120,7 +157,7 @@ connect(reply, &QNetworkReply::finished, this, [this, reply]() {
 
 ---
 
-## 6. C++17 モダン化
+## 7. C++17 モダン化
 
 ### 一覧
 
@@ -138,7 +175,7 @@ connect(reply, &QNetworkReply::finished, this, [this, reply]() {
 
 ---
 
-## 7. QML UI の再構成
+## 8. QML UI の再構成
 
 ### 変更内容
 - `main.qml` → `Main.qml` にリネーム（QML 型名規約: 大文字始まり）
@@ -154,12 +191,13 @@ connect(reply, &QNetworkReply::finished, this, [this, reply]() {
 
 ---
 
-## 8. ファイル構成の変化
+## 9. ファイル構成の変化
 
 ### 削除
 | ファイル | 理由 |
 |---|---|
 | `binding.h / .cpp` | `MastodonClient` に置き換え |
+| `oauth2.h / .cpp` | QtNetworkAuth (`QOAuth2AuthorizationCodeFlow`) に置き換え |
 | `Qtdon.pro` | CMake 移行 |
 | `qml.qrc` | `qt_add_qml_module` が代替 |
 | `deployment.pri` | qmake 専用 |
@@ -175,8 +213,7 @@ connect(reply, &QNetworkReply::finished, this, [this, reply]() {
 ### 改修
 | ファイル | 主な変更 |
 |---|---|
-| `oauth2.h / .cpp` | クラス名 `oauth2` → `OAuth2`、`[[nodiscard]]`、`QStringLiteral` |
-| `oauthmastodon.h / .cpp` | `QEventLoop` 廃止、`QMessageBox` 廃止、新 connect 構文 |
+| `oauthmastodon.h / .cpp` | QtNetworkAuth (`QOAuth2AuthorizationCodeFlow` + `QOAuthHttpServerReplyHandler`) に全面書き換え。OOB フロー廃止、localhost リダイレクト方式へ。`QEventLoop` 廃止、`QMessageBox` 廃止 |
 | `qmastodonnetbase.h / .cpp` | `enum class`、`QMessageBox` 廃止、`nullptr` |
 | `qmastodonpoststatus.h / .cpp` | `QStringList`、range-for、新 connect 構文 |
 | `main.cpp` | `QGuiApplication`、`loadFromModule` |

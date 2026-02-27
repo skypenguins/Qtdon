@@ -59,7 +59,7 @@ void QMastodonPostStatus::postStatus(const QString &status,
 
     QNetworkRequest request(url);
     request.setRawHeader("Authorization",
-                         OAuth2::generateBearerHeader(oauth->accessToken()));
+                         OAuthMastodon::generateBearerHeader(oauth->accessToken()));
     request.setHeader(QNetworkRequest::ContentTypeHeader,
                       QStringLiteral("application/x-www-form-urlencoded"));
 
