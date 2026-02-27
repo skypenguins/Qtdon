@@ -1,103 +1,127 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Qtdon
 
 ApplicationWindow {
-    id: applicationWindow1
-    width: 360
+    id: root
+
+    width: 400
     minimumWidth: 360
-    height: 360
-    minimumHeight: 360
-    title: qsTr("Qtodon")
+    height: 500
+    minimumHeight: 400
+    title: qsTr("Qtdon")
     visible: true
 
-    Button {
-        id: authStartButton
-        x: (parent.width - width) / 2
-        text: qsTr("Login...")
-        onClicked: popup.open()
+    MastodonClient {
+        id: client
     }
+
+    // ── Main content ──────────────────────────────────────────────────
+
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: 16
+        spacing: 12
+
+        Button {
+            text: client.authenticated
+                  ? qsTr("Authenticated ✓")
+                  : qsTr("Login...")
+            enabled: !client.authenticated
+            Layout.alignment: Qt.AlignHCenter
+            onClicked: loginPopup.open()
+        }
+
+        TextArea {
+            id: tootText
+            placeholderText: qsTr("What's on your mind?")
+            wrapMode: TextEdit.Wrap
+            enabled: client.authenticated
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+        }
+
+        Button {
+            text: qsTr("Post")
+            enabled: client.authenticated && tootText.text.length > 0
+            Layout.alignment: Qt.AlignHCenter
+            onClicked: {
+                client.postStatus(tootText.text)
+                tootText.text = ""
+            }
+        }
+
+        Label {
+            text: client.errorMessage
+            color: "red"
+            visible: client.errorMessage.length > 0
+            wrapMode: Text.Wrap
+            Layout.fillWidth: true
+        }
+    }
+
+    // ── Login popup ───────────────────────────────────────────────────
 
     Popup {
-       id: popup
-       contentWidth:  parent.width * 0.8
-       contentHeight:  parent.height * 0.4
-       x: (parent.width - width) / 2
-       y: (parent.height - height) / 2
-       modal: true
-       focus: true
-       closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        id: loginPopup
+        anchors.centerIn: parent
+        width: parent.width * 0.85
+        height: 220
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 12
+            spacing: 10
 
-           Frame {
-               id: groupBox1
-               x: 0
-               y: 0
-               width: parent.width
-               height: hostField.height + 20
+            Label {
+                text: qsTr("Login to Mastodon")
+                font.bold: true
+                Layout.alignment: Qt.AlignHCenter
+            }
 
-               TextField {
-                   id: hostField
-                   x: 10
-                   width: 150
-                   placeholderText: qsTr("Type the host name...")
-               }
+            RowLayout {
+                Layout.fillWidth: true
 
-               Button {
-                   id: authButton1
-                   x: hostField.width + 20
-                   text: qsTr("Go to Authentication")
-                   onClicked: mastodon.startAuth = hostField.text
-               }
-           }
+                TextField {
+                    id: hostField
+                    placeholderText: qsTr("Instance (e.g. mastodon.social)")
+                    Layout.fillWidth: true
+                }
 
-           Frame {
-               id: groupBox2
-               x: 0
-               y: groupBox1.height + 10
-               width:  parent.width
-               height:  authCodeField.height + 20
+                Button {
+                    text: qsTr("Open Auth")
+                    onClicked: client.startAuth(hostField.text)
+                }
+            }
 
-               TextField {
-                   id: authCodeField
-                   x: 10
-                   width: hostField.width
-                   placeholderText: qsTr("Type the Auth Code...")
-               }
+            RowLayout {
+                Layout.fillWidth: true
 
-               Button {
-                   id: authButton2
-                   x: authCodeField.width + 15
-                   text: qsTr("Authorize")
-                   onClicked: mastodon.postAuthCode = authCodeField.text
-               }
-           }
+                TextField {
+                    id: authCodeField
+                    placeholderText: qsTr("Paste authorization code...")
+                    Layout.fillWidth: true
+                }
 
-
+                Button {
+                    text: qsTr("Authorize")
+                    onClicked: client.postAuthCode(authCodeField.text)
+                }
+            }
+        }
     }
 
-    TextArea {
-        id: tootText
-        text: ""
-        x: 20
-        y: 70
-        width: 200
-        height: 200
-        placeholderText: qsTr("Type a toot...")
-        anchors.horizontalCenterOffset: 0
-        anchors.horizontalCenter: parent.horizontalCenter
-    }
+    // ── Reactive connections ──────────────────────────────────────────
 
-    Button {
-        id: post
-        x: 179
-        y: tootText.y + tootText.height + 20
-        text: qsTr("TOOT!")
-        antialiasing: true
-        anchors.horizontalCenterOffset: 1
-        anchors.horizontalCenter: parent.horizontalCenter
-        transformOrigin: Item.TopLeft
-        onClicked: mastodon.toot = tootText.text
+    Connections {
+        target: client
+        function onAuthenticatedChanged() {
+            if (client.authenticated)
+                loginPopup.close()
+        }
     }
-
 }

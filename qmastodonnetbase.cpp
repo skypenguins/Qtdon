@@ -1,26 +1,44 @@
 #include "qmastodonnetbase.h"
 
+#include <QNetworkReply>
+#include <QNetworkRequest>
+
 QMastodonNetBase::QMastodonNetBase(QObject *parent)
-    : QObject(parent), m_oauthMastodon(0)
+    : QObject(parent)
 {
 }
 
 QMastodonNetBase::QMastodonNetBase(OAuthMastodon *oauthMastodon, QObject *parent)
-    : QObject(parent), m_oauthMastodon(oauthMastodon), m_authentication(true)
+    : QObject(parent)
+    , m_oauthMastodon(oauthMastodon)
 {
 }
+
+// ---------------------------------------------------------------------------
+// Accessors
+// ---------------------------------------------------------------------------
 
 void QMastodonNetBase::setOAuthMastodon(OAuthMastodon *oauthMastodon)
 {
     m_oauthMastodon = oauthMastodon;
 }
 
-OAuthMastodon* QMastodonNetBase::oauthMastodon() const
+OAuthMastodon *QMastodonNetBase::oauthMastodon() const
 {
     return m_oauthMastodon;
 }
 
-QByteArray QMastodonNetBase::response()
+void QMastodonNetBase::setAuthenticationEnabled(bool enable)
+{
+    m_authenticationEnabled = enable;
+}
+
+bool QMastodonNetBase::isAuthenticationEnabled() const
+{
+    return m_authenticationEnabled;
+}
+
+QByteArray QMastodonNetBase::response() const
 {
     return m_response;
 }
@@ -30,63 +48,55 @@ QString QMastodonNetBase::lastErrorMessage() const
     return m_lastErrorMessage;
 }
 
-void QMastodonNetBase::setAuthenticationEnabled(bool enable)
-{
-    m_authentication = enable;
-}
-
-bool QMastodonNetBase::isAuthenticationEnabled() const
-{
-    return m_authentication;
-}
+// ---------------------------------------------------------------------------
+// JSON helpers
+// ---------------------------------------------------------------------------
 
 void QMastodonNetBase::parseJson(const QByteArray &jsonData)
 {
-    QJsonDocument jsonDoc = QJsonDocument::fromJson(jsonData);
-
+    const auto jsonDoc = QJsonDocument::fromJson(jsonData);
     parseJsonFinished(jsonDoc);
 }
 
-void QMastodonNetBase::reply()
+// ---------------------------------------------------------------------------
+// Reply handling
+// ---------------------------------------------------------------------------
+
+void QMastodonNetBase::onReplyFinished()
 {
-    QNetworkReply* reply = qobject_cast<QNetworkReply*>(sender());
-    qDebug() << "QMastodonNetBase reply()";
-    if(reply){
-        if(reply->error() == QNetworkReply::NoError){
-            m_response = reply->readAll();
-            emit finished(m_response);
+    auto *reply = qobject_cast<QNetworkReply *>(sender());
+    if (!reply)
+        return;
 
-            QMessageBox resMsgBox;
-            resMsgBox.setIcon(QMessageBox::Information);
-            resMsgBox.setWindowTitle(tr("Response"));
-            resMsgBox.setText(tr("Response Data"));
-            resMsgBox.setInformativeText(m_response);
-            resMsgBox.exec();
+    reply->deleteLater();
 
-            // parseJson(m_response);
-        } else {
-            m_response = reply->readAll();
+    if (reply->error() == QNetworkReply::NoError) {
+        m_response = reply->readAll();
+        emit finished(m_response);
+        parseJson(m_response);
+        return;
+    }
 
-            int httpStatus = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    m_response = reply->readAll();
+    const int httpStatus =
+        reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
 
-            switch(httpStatus){
-            case NotModified:
-            case BadRequest:
-            case Unauthorized:
-            case Forbidden:
-            case NotFound:
-            case NotAcceptable:
-            case EnhanceYourCalm:
-            case InternalServerError:
-            case BadGateway:
-            case ServiceUnavailable:
-                emit error(static_cast<ErrorCode>(httpStatus), m_lastErrorMessage);
-                break;
-            default:
-                emit error(UnknownError, m_lastErrorMessage);
-            }
-        }
-        reply->deleteLater();
+    switch (httpStatus) {
+    case static_cast<int>(ErrorCode::NotModified):
+    case static_cast<int>(ErrorCode::BadRequest):
+    case static_cast<int>(ErrorCode::Unauthorized):
+    case static_cast<int>(ErrorCode::Forbidden):
+    case static_cast<int>(ErrorCode::NotFound):
+    case static_cast<int>(ErrorCode::NotAcceptable):
+    case static_cast<int>(ErrorCode::RateLimited):
+    case static_cast<int>(ErrorCode::InternalServerError):
+    case static_cast<int>(ErrorCode::BadGateway):
+    case static_cast<int>(ErrorCode::ServiceUnavailable):
+        emit error(static_cast<ErrorCode>(httpStatus), reply->errorString());
+        break;
+    default:
+        emit error(ErrorCode::UnknownError, reply->errorString());
+        break;
     }
 }
 

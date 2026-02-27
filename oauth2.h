@@ -1,32 +1,43 @@
-﻿#ifndef OAUTH_H
-#define OAUTH_H
+#ifndef OAUTH2_H
+#define OAUTH2_H
 
 #include <QObject>
-#include <QMap>
-#include <QUrl>
 #include <QUrlQuery>
 
-/* This class contains minimal functions for Mastodon API.
- * Authorization Code is required.
+/**
+ * @brief Generic OAuth2 helper — builds authorization queries, token request
+ *        payloads, and Bearer headers.
+ *
+ * Sub-class this to add provider-specific behaviour (see OAuthMastodon).
  */
-
-class oauth2 : public QObject
+class OAuth2 : public QObject
 {
     Q_OBJECT
+
 public:
-    explicit oauth2(QObject *parent = 0);
-    explicit oauth2(const QString& clientId, const QString& clientSecret, QObject *parent = 0); /* If end user uses an existing client_id and client_secret. (Advanced Option) */
-    QUrlQuery generateAuthenticationQuery(QString redirectUri, QString responseType, QString scope);
-    QByteArray generateAuthorizationPostData(QString authorizationCode, QString redirectUri, QString grantType = "authorization_code");
-    QByteArray generateAuthorizationHeader(const QByteArray& accessToken);
+    explicit OAuth2(QObject *parent = nullptr);
+    explicit OAuth2(const QString &clientId,
+                    const QString &clientSecret,
+                    QObject *parent = nullptr);
 
-signals:
+    /** Build the query string for the authorization URL. */
+    [[nodiscard]] QUrlQuery generateAuthQuery(
+        const QString &redirectUri,
+        const QString &responseType,
+        const QString &scope) const;
 
-private slots:
+    /** Build the POST body for the token endpoint. */
+    [[nodiscard]] QByteArray generateTokenRequestData(
+        const QString &authCode,
+        const QString &redirectUri,
+        const QString &grantType = QStringLiteral("authorization_code")) const;
+
+    /** Return a "Bearer <token>" header value. */
+    [[nodiscard]] static QByteArray generateBearerHeader(const QByteArray &accessToken);
 
 private:
     QString m_clientId;
     QString m_clientSecret;
 };
 
-#endif // OAUTH_H
+#endif // OAUTH2_H

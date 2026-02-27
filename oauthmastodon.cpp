@@ -1,28 +1,43 @@
-﻿#include "oauthmastodon.h"
+#include "oauthmastodon.h"
+
+#include <QDesktopServices>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QUrl>
 
 OAuthMastodon::OAuthMastodon(QObject *parent)
-    : oauth2(parent)
+    : OAuth2(parent)
 {
 }
 
-OAuthMastodon::OAuthMastodon(const QString &mastodonHost, const QByteArray &accessToken, QObject *parent)
-    : oauth2(parent), m_networkManager(0), m_mastodonHost(mastodonHost), m_accessToken(accessToken)
+OAuthMastodon::OAuthMastodon(const QString &mastodonHost,
+                             const QByteArray &accessToken,
+                             QObject *parent)
+    : OAuth2(parent)
+    , m_mastodonHost(mastodonHost)
+    , m_accessToken(accessToken)
 {
 }
 
-OAuthMastodon::OAuthMastodon(QNetworkAccessManager *networkManager, QObject *parent)
-    : oauth2(parent), m_networkManager(networkManager)
+OAuthMastodon::OAuthMastodon(const QString &clientId,
+                             const QString &clientSecret,
+                             QObject *parent)
+    : OAuth2(clientId, clientSecret, parent)
 {
 }
 
-OAuthMastodon::OAuthMastodon(const QString &clientId, const QString &clientSecret, QObject *parent)
-    : oauth2(clientId, clientSecret, parent)
+// ---------------------------------------------------------------------------
+// Accessors
+// ---------------------------------------------------------------------------
+
+void OAuthMastodon::setNetworkAccessManager(QNetworkAccessManager *manager)
 {
+    m_networkManager = manager;
 }
 
-void OAuthMastodon::setNetworkAccessManager(QNetworkAccessManager *networkManager)
+QNetworkAccessManager *OAuthMastodon::networkAccessManager() const
 {
-    m_networkManager = networkManager;
+    return m_networkManager;
 }
 
 void OAuthMastodon::setAccessToken(const QByteArray &accessToken)
@@ -30,29 +45,9 @@ void OAuthMastodon::setAccessToken(const QByteArray &accessToken)
     m_accessToken = accessToken;
 }
 
-QNetworkAccessManager* OAuthMastodon::networkAccessManager() const
-{
-    return m_networkManager;
-}
-
 QByteArray OAuthMastodon::accessToken() const
 {
     return m_accessToken;
-}
-
-void OAuthMastodon::requestAuthorization(const QString& mastodonHost)
-{
-    m_mastodonHost = mastodonHost;
-
-    QUrl url("https://" + m_mastodonHost + "/oauth/authorize");
-
-    QUrlQuery oauthQuery = generateAuthenticationQuery("urn:ietf:wg:oauth:2.0:oob", "code", "read write follow");
-
-    url.setQuery(oauthQuery);
-
-    emit authorizationUrlGenerated();
-
-    QDesktopServices::openUrl(url);
 }
 
 QString OAuthMastodon::mastodonHost() const
@@ -60,54 +55,68 @@ QString OAuthMastodon::mastodonHost() const
     return m_mastodonHost;
 }
 
-void OAuthMastodon::requestAccessToken(const QString& authCode)
+// ---------------------------------------------------------------------------
+// Authorization flow
+// ---------------------------------------------------------------------------
+
+void OAuthMastodon::requestAuthorization(const QString &mastodonHost)
 {
-    QUrl url("https://" + m_mastodonHost + "/oauth/token");
+    m_mastodonHost = mastodonHost;
 
-    QByteArray postData = generateAuthorizationPostData(authCode, "urn:ietf:wg:oauth:2.0:oob", "authorization_code");
+    QUrl url(QStringLiteral("https://") + m_mastodonHost
+             + QStringLiteral("/oauth/authorize"));
 
-    QEventLoop q;
-    QTimer t;
-    t.setSingleShot(true);
+    url.setQuery(generateAuthQuery(
+        QStringLiteral("urn:ietf:wg:oauth:2.0:oob"),
+        QStringLiteral("code"),
+        QStringLiteral("read write follow")));
 
-    QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
-
-    QNetworkReply* reply = m_networkManager->post(request, postData);
-
-    connect(reply, SIGNAL(finished()), &q, SLOT(quit()));
-    connect(reply, SIGNAL(error(QNetworkReply::NetworkError)), this, SLOT(popUpError(reply)));
-    connect(&t, SIGNAL(timeout()), &q, SLOT(quit()));
-
-    t.start(5000);
-    q.exec();
-
-    if(t.isActive()){
-        QByteArray response = reply->readAll();
-        reply->deleteLater();
-
-        auto resultJson = QJsonDocument::fromJson(response);
-        m_accessToken = resultJson.object().value("access_token").toString().toUtf8();
-
-        emit authorizeAuthCodeFinished();
-
-        qDebug() << "Authorization is succeeded.";
-    } else {
-        QMessageBox errMegBox;
-        errMegBox.setIcon(QMessageBox::Critical);
-        errMegBox.setWindowTitle(tr("Timeout"));
-        errMegBox.setText(tr("The authorization is timeout."));
-        errMegBox.setInformativeText(tr("Please try again later."));
-        errMegBox.exec();
-    }
+    QDesktopServices::openUrl(url);
+    emit authorizationUrlOpened();
 }
 
-void OAuthMastodon::popUpError(QNetworkReply* errorReply)
+void OAuthMastodon::requestAccessToken(const QString &authCode)
 {
-    QMessageBox errMegBox2;
-    errMegBox2.setIcon(QMessageBox::Critical);
-    errMegBox2.setWindowTitle(tr("Error"));
-    errMegBox2.setText("Error is occured.");
-    errMegBox2.setInformativeText(errorReply->errorString());
-    errMegBox2.exec();
+    if (!m_networkManager) {
+        emit errorOccurred(tr("Network manager is not initialised."));
+        return;
+    }
+
+    QUrl url(QStringLiteral("https://") + m_mastodonHost
+             + QStringLiteral("/oauth/token"));
+
+    const QByteArray postData = generateTokenRequestData(
+        authCode, QStringLiteral("urn:ietf:wg:oauth:2.0:oob"));
+
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::ContentTypeHeader,
+                      QStringLiteral("application/x-www-form-urlencoded"));
+
+    QNetworkReply *reply = m_networkManager->post(request, postData);
+
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        reply->deleteLater();
+
+        if (reply->error() != QNetworkReply::NoError) {
+            emit errorOccurred(reply->errorString());
+            return;
+        }
+
+        const auto response = reply->readAll();
+        const auto json = QJsonDocument::fromJson(response);
+
+        if (!json.isObject()
+            || !json.object().contains(QStringLiteral("access_token"))) {
+            emit errorOccurred(tr("Invalid token response from server."));
+            return;
+        }
+
+        m_accessToken = json.object()
+                            .value(QStringLiteral("access_token"))
+                            .toString()
+                            .toUtf8();
+
+        qDebug() << "Authorization succeeded.";
+        emit accessTokenReceived();
+    });
 }

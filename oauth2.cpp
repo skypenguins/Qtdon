@@ -1,58 +1,51 @@
-﻿#include "oauth2.h"
+#include "oauth2.h"
 
-/* Temporary */
-#define CLIENT_ID "***"
-#define CLIENT_SECRET "***"
+namespace {
+// TODO: Replace with dynamic client registration or external configuration.
+constexpr auto CLIENT_ID     = "***";
+constexpr auto CLIENT_SECRET = "***";
+} // namespace
 
-oauth2::oauth2(QObject *parent)
-    : QObject(parent), m_clientId(CLIENT_ID), m_clientSecret(CLIENT_SECRET)
-{
-
-}
-
-oauth2::oauth2(const QString &clientId, const QString &clientSecret, QObject *parent)
-    : QObject(parent), m_clientId(clientId), m_clientSecret(clientSecret)
+OAuth2::OAuth2(QObject *parent)
+    : QObject(parent)
+    , m_clientId(QLatin1String(CLIENT_ID))
+    , m_clientSecret(QLatin1String(CLIENT_SECRET))
 {
 }
 
-QUrlQuery oauth2::generateAuthenticationQuery(QString redirectUri, QString responseType, QString scope)
+OAuth2::OAuth2(const QString &clientId, const QString &clientSecret, QObject *parent)
+    : QObject(parent)
+    , m_clientId(clientId)
+    , m_clientSecret(clientSecret)
 {
-    QMap<QString, QString> params;
-    params["redirect_uri"]  = redirectUri;
-    params["response_type"] = responseType;
-    params["client_id"]     = m_clientId;
-    params["scope"]         = scope;
-
-    QUrlQuery requestQuery;
-    QMapIterator<QString,QString> itr(params);
-    while (itr.hasNext()) {
-        itr.next();
-        requestQuery.addQueryItem(itr.key(), itr.value());
-    }
-
-    return requestQuery;
 }
 
-QByteArray oauth2::generateAuthorizationPostData(QString authorizationCode, QString redirectUri, QString grantType)
+QUrlQuery OAuth2::generateAuthQuery(const QString &redirectUri,
+                                    const QString &responseType,
+                                    const QString &scope) const
 {
-    QMap<QString, QString> params;
-    params["client_id"]     = m_clientId;
-    params["client_secret"] = m_clientSecret;
-    params["code"]          = authorizationCode;
-    params["grant_type"]    = grantType;
-    params["redirect_uri"]  = redirectUri;
-
-    QUrlQuery requestQuery;
-    QMapIterator<QString,QString> itr(params);
-    while (itr.hasNext()) {
-        itr.next();
-        requestQuery.addQueryItem(itr.key(), itr.value());
-    }
-
-    return requestQuery.toString().toUtf8();
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("redirect_uri"),  redirectUri);
+    query.addQueryItem(QStringLiteral("response_type"), responseType);
+    query.addQueryItem(QStringLiteral("client_id"),     m_clientId);
+    query.addQueryItem(QStringLiteral("scope"),         scope);
+    return query;
 }
 
-QByteArray oauth2::generateAuthorizationHeader(const QByteArray& accessToken)
+QByteArray OAuth2::generateTokenRequestData(const QString &authCode,
+                                            const QString &redirectUri,
+                                            const QString &grantType) const
 {
-    return QByteArray("Bearer " + accessToken);
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("client_id"),     m_clientId);
+    query.addQueryItem(QStringLiteral("client_secret"), m_clientSecret);
+    query.addQueryItem(QStringLiteral("code"),          authCode);
+    query.addQueryItem(QStringLiteral("grant_type"),    grantType);
+    query.addQueryItem(QStringLiteral("redirect_uri"),  redirectUri);
+    return query.toString().toUtf8();
+}
+
+QByteArray OAuth2::generateBearerHeader(const QByteArray &accessToken)
+{
+    return QByteArray("Bearer ") + accessToken;
 }

@@ -1,5 +1,6 @@
-import QtQuick 2.0
+import QtQuick
+import QtQuick.Controls
 
+// TODO: Implement standalone authentication window.
 Item {
-
 }

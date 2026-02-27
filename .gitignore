@@ -1,42 +1,53 @@
-oauth2.json
+# === Build ===
+build/
+cmake-build-*/
 
-#Visual Studio User Options File
+# === IDE / Editor ===
 *.user
+*.user.*
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
 
-# Prerequisites
-*.d
+# === macOS ===
+.DS_Store
+._*
 
-# Compiled Object files
-*.slo
-*.lo
+# === Compiled Objects ===
 *.o
 *.obj
+*.lo
+*.slo
 
-# Precompiled Headers
+# === Precompiled Headers ===
 *.gch
 *.pch
 
-# Compiled Dynamic libraries
+# === Libraries ===
 *.so
 *.dylib
 *.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
 *.a
+*.la
+*.lai
 *.lib
 
-# Executables
+# === Executables ===
 *.exe
 *.out
 *.app
 
+# === Qt / CMake ===
 *.stash
+*.autosave
+*.qmlc
+*.jsc
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
 Makefile
-uic_wrapper.sh
-.DS_Store
+
+# === Misc ===
+*.d

@@ -2,32 +2,37 @@
 #define QMASTODONPOSTSTATUS_H
 
 #include "qmastodonnetbase.h"
-#include <iterator>
 
+/**
+ * @brief Posts a status (toot) via POST /api/v1/statuses.
+ *
+ * Visibility values:
+ *   "direct"   — Direct message
+ *   "private"  — Followers only
+ *   "unlisted" — Home timeline only
+ *   "public"   — Visible to everyone
+ */
 class QMastodonPostStatus : public QMastodonNetBase
 {
-    Q_OBJECT   
-public:
-    QMastodonPostStatus(QObject *parent = 0);
-    QMastodonPostStatus(OAuthMastodon *oauthMastodon, QObject *parent);
-    void postStatus(const QString& status,
-              qint64 inReplyToId = 0,
-              QList<QString> mediaIds = QList<QString>(),
-              bool sensitive = false,
-              QString spoilerText = QString(),
-              QString statusVisibility = "public");
+    Q_OBJECT
 
-    /* "direct"     Direct Message
-     * "private"    Status can be seen to only followers
-     * "unlisted"   Status can be seen only home timeline
-     * "public"     Status can be seen all users
-     */
+public:
+    explicit QMastodonPostStatus(QObject *parent = nullptr);
+    explicit QMastodonPostStatus(OAuthMastodon *oauthMastodon,
+                                 QObject *parent = nullptr);
+
+    void postStatus(const QString &status,
+                    qint64 inReplyToId = 0,
+                    const QStringList &mediaIds = {},
+                    bool sensitive = false,
+                    const QString &spoilerText = {},
+                    const QString &visibility = QStringLiteral("public"));
 
 signals:
-    void postedStatus(const QString& status);
+    void statusPosted(const QString &response);
 
 protected:
-    void parseJsonFinished(const QJsonDocument &jsonDoc);
+    void parseJsonFinished(const QJsonDocument &jsonDoc) override;
 };
 
 #endif // QMASTODONPOSTSTATUS_H

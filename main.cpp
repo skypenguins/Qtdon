@@ -1,20 +1,21 @@
-#include <QApplication>
+#include <QGuiApplication>
 #include <QQmlApplicationEngine>
-#include <QtQml>
 #include <QQuickStyle>
-#include "binding.h"
 
 int main(int argc, char *argv[])
 {
-    QApplication app(argc, argv);
+    QGuiApplication app(argc, argv);
 
-    QQuickStyle::setStyle("Default");
+    QQuickStyle::setStyle(QStringLiteral("Default"));
 
     QQmlApplicationEngine engine;
-    engine.load(QUrl(QStringLiteral("qrc:/main.qml")));
 
-    Binding binding;
-    engine.rootContext()->setContextProperty("mastodon", &binding);
+    QObject::connect(
+        &engine, &QQmlApplicationEngine::objectCreationFailed,
+        &app,    []() { QCoreApplication::exit(1); },
+        Qt::QueuedConnection);
+
+    engine.loadFromModule("Qtdon", "Main");
 
     return app.exec();
 }

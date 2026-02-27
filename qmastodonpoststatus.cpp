@@ -1,70 +1,79 @@
 #include "qmastodonpoststatus.h"
 
+#include <QJsonDocument>
+#include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QUrlQuery>
+
 QMastodonPostStatus::QMastodonPostStatus(QObject *parent)
     : QMastodonNetBase(parent)
 {
 }
 
-QMastodonPostStatus::QMastodonPostStatus(OAuthMastodon *oauthMastodon, QObject *parent)
-    :QMastodonNetBase(oauthMastodon, parent)
+QMastodonPostStatus::QMastodonPostStatus(OAuthMastodon *oauthMastodon,
+                                         QObject *parent)
+    : QMastodonNetBase(oauthMastodon, parent)
 {
 }
 
-void QMastodonPostStatus::postStatus(const QString& status,
-                               qint64 inReplyToId,
-                               QList<QString> mediaIds,
-                               bool sensitive,
-                               QString spoilerText,
-                               QString statusVisibility)
+void QMastodonPostStatus::postStatus(const QString &status,
+                                     qint64 inReplyToId,
+                                     const QStringList &mediaIds,
+                                     bool sensitive,
+                                     const QString &spoilerText,
+                                     const QString &visibility)
 {
     if (!isAuthenticationEnabled()) {
-            qCritical("Authentication is disabled.");
-            return;
+        qCritical("Authentication is disabled.");
+        return;
     }
 
-    QUrl url("https://" + oauthMastodon()->mastodonHost() + "/api/v1/statuses");
+    auto *oauth = oauthMastodon();
+    if (!oauth || !oauth->networkAccessManager()) {
+        qCritical("OAuth or network manager not available.");
+        return;
+    }
+
+    const QUrl url(QStringLiteral("https://") + oauth->mastodonHost()
+                   + QStringLiteral("/api/v1/statuses"));
 
     QUrlQuery postData;
-    postData.addQueryItem("status", status);
+    postData.addQueryItem(QStringLiteral("status"), status);
 
-    if(inReplyToId != 0)
-        postData.addQueryItem("in_reply_to_id", QString::number(inReplyToId));
+    if (inReplyToId != 0)
+        postData.addQueryItem(QStringLiteral("in_reply_to_id"),
+                              QString::number(inReplyToId));
 
-    if(!mediaIds.isEmpty()){
-        QListIterator<QString> i(mediaIds);
-        while(i.hasNext()){
-            postData.addQueryItem("media_ids", i.next());
-        }
-    }
+    for (const auto &mediaId : mediaIds)
+        postData.addQueryItem(QStringLiteral("media_ids[]"), mediaId);
 
-    if(sensitive)
-        postData.addQueryItem("sensitive", "true");
+    if (sensitive)
+        postData.addQueryItem(QStringLiteral("sensitive"),
+                              QStringLiteral("true"));
 
-    if(!spoilerText.isEmpty())
-        postData.addQueryItem("spoiler_text", spoilerText);
+    if (!spoilerText.isEmpty())
+        postData.addQueryItem(QStringLiteral("spoiler_text"), spoilerText);
 
-    if(statusVisibility != "public")
-        postData.addQueryItem("visibility", statusVisibility);
-
-    QByteArray oauthHeader = oauthMastodon()->generateAuthorizationHeader(oauthMastodon()->accessToken());
+    if (visibility != QStringLiteral("public"))
+        postData.addQueryItem(QStringLiteral("visibility"), visibility);
 
     QNetworkRequest request(url);
-    request.setRawHeader("Authorization", oauthHeader);
-    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
+    request.setRawHeader("Authorization",
+                         OAuth2::generateBearerHeader(oauth->accessToken()));
+    request.setHeader(QNetworkRequest::ContentTypeHeader,
+                      QStringLiteral("application/x-www-form-urlencoded"));
 
-    QNetworkReply* reply = oauthMastodon()->networkAccessManager()->post(request, postData.toString().toUtf8());
-    connect(reply, SIGNAL(finished()), this, SLOT(reply()));
+    auto *reply = oauth->networkAccessManager()->post(
+        request, postData.toString().toUtf8());
+
+    connect(reply, &QNetworkReply::finished,
+            this,  &QMastodonPostStatus::onReplyFinished);
 }
 
-void QMastodonPostStatus::parseJsonFinished(const QJsonDocument& jsonDoc)
+void QMastodonPostStatus::parseJsonFinished(const QJsonDocument &jsonDoc)
 {
-    if(jsonDoc.isObject()){
-        QMessageBox errMegBox;
-        errMegBox.setIcon(QMessageBox::Information);
-        errMegBox.setWindowTitle(tr("Succeed"));
-        errMegBox.setText(tr("Response Data"));
-        errMegBox.setInformativeText(jsonDoc.toVariant().toString());
-        errMegBox.exec();
-        // emit postedStatus(jsonDoc.toVariant().toString());
+    if (jsonDoc.isObject()) {
+        emit statusPosted(
+            QString::fromUtf8(jsonDoc.toJson(QJsonDocument::Compact)));
     }
 }
